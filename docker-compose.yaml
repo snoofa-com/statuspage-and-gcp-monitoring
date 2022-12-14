@@ -1,0 +1,13 @@
+version: '3.6'
+services:
+  statuspage-manager:
+    build: .
+    container_name: snoofa-statuspage-manager.dev
+    working_dir: /srv/app
+    ports:
+      - "8100:8079"
+    env_file:
+      - ./local.env
+    command: ["php", "-S", "0.0.0.0:8079", "vendor/google/cloud-functions-framework/router.php"]
+    volumes:
+      - ./src:/srv/app:cached
