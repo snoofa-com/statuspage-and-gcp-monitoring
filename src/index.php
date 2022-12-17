@@ -14,7 +14,10 @@ use Google\CloudFunctions\FunctionsFramework;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+use Superbalist\Monolog\Formatter;
 use Nette\Utils\Json;
+use Superbalist\Monolog\Formatter\GoogleCloudJsonFormatter;
 
 
 FunctionsFramework::cloudEvent('main', 'main');
@@ -28,14 +31,20 @@ function main(CloudEventInterface $event): void
 
 	$data = Json::decode(base64_decode($event->getData()['message']['data']));
 
-	$log->debug('Received message: ', ['data' => $data]);
-	$log->debug("Incident ID: {$data->incident->incident_id}");
-	$log->debug("Incident State: {$data->incident->state}");
+	$log->addDebug('Received message: ', ['data' => $data]);
+	$log->addDebug("Incident ID: {$data->incident->incident_id}");
+	$log->addDebug("Incident State: {$data->incident->state}");
 
 	$incident = $data->incident;
 	$labels = $incident->policy_user_labels;
 
-	if ($data->incident->state === 'OPEN') {
+	$log->addDebug('Received status change signal', [
+		'incident_id' => $incident->incident_id,
+		'incident_state' => $incident->state,
+		'policy_labels' => $labels
+	]);
+
+	if ($data->incident->state === 'open') {
 		start_incident(
 			$incident->incident_id,
 			$incident->policy_name,
@@ -47,7 +56,6 @@ function main(CloudEventInterface $event): void
 	} else {
 		resolve_incidents($incident->incident_id);
 	}
-
 }
 
 function parseAffectedComponents(string $components): array {
@@ -63,6 +71,7 @@ function start_incident(
 	?string $componentsStatus = null
 ): void {
 	global $client;
+	global $log;
 
 	$incident = [
 		'name' => 'Service outage',
@@ -80,8 +89,6 @@ function start_incident(
 		'component_ids' => $components
 	];
 
-	echo Json::encode($incident);
-
 	if ($incidentImpact !== null) {
 		$incident['impact_override'] = $incidentImpact;
 	}
@@ -91,7 +98,7 @@ function start_incident(
 	try {
 		$client->post('incidents', ['json' => $body]);
 	} catch (GuzzleException $e) {
-		echo $e->getMessage();
+		$log->addError('POST call to statuspage failed', ['message' => $e->getMessage(), 'exception' => $e]);
 	}
 }
 
@@ -117,7 +124,11 @@ function resolve_incidents(string $incidentId): void {
 			],
 		];
 
-		$client->patch("incidents/{$incident['id']}", ['json' => $body]);
+		try {
+			$client->patch("incidents/{$incident['id']}", ['json' => $body]);
+		} catch (GuzzleException $e) {
+			$log->addError('PATCH call to statuspage failed', ['message' => $e->getMessage(), 'exception' => $e]);
+		}
 	}
 
 	$log->debug(count($incidents) . ' incident(s) resolved.');
@@ -138,5 +149,11 @@ function registerClient(string $pageId, string $authToken): Client {
  */
 function registerLogger(): Logger
 {
-	return new Logger('default');
+	$handler = new StreamHandler('php://stdout', Logger::WARNING);
+	$handler->setFormatter(new GoogleCloudJsonFormatter());
+
+	$log = new Logger('default');
+	$log->pushHandler($handler);
+
+	return $log;
 }
