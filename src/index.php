@@ -149,7 +149,7 @@ function registerClient(string $pageId, string $authToken): Client {
  */
 function registerLogger(): Logger
 {
-	$handler = new StreamHandler('php://stdout', Logger::WARNING);
+	$handler = new StreamHandler('php://stderr', Logger::DEBUG);
 	$handler->setFormatter(new GoogleCloudJsonFormatter());
 
 	$log = new Logger('default');
