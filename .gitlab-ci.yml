@@ -39,7 +39,7 @@ deploy_production:
       --max-instances='5' \
       --entry-point='main' \
       --trigger-topic=$2 \
-      --set-env-vars=[PAGE_ID=$STATUSPAGE_PAGE_ID,AUTH_TOKEN=$STATUSPAGE_AUTH_TOKEN]
+      --set-env-vars=PAGE_ID=$STATUSPAGE_PAGE_ID,AUTH_TOKEN=$STATUSPAGE_AUTH_TOKEN
   }
 
 before_script:
