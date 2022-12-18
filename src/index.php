@@ -22,7 +22,7 @@ use Superbalist\Monolog\Formatter\GoogleCloudJsonFormatter;
 
 FunctionsFramework::cloudEvent('main', 'main');
 
-$client = registerClient("qp85tfp89xjk", "51cbd17a-9469-46dd-82e2-3eb44824c764");
+$client = registerClient(getenv('PAGE_ID'), getenv('AUTH_TOKEN'));
 $log = registerLogger();
 
 function main(CloudEventInterface $event): void
