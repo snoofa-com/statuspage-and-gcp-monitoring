@@ -15,8 +15,10 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Monolog\Logger;
 use Monolog\Handler\StreamHandler;
-use Superbalist\Monolog\Formatter;
 use Nette\Utils\Json;
+use Nette\Utils\JsonException;
+use Snoofa\StpManager\ValueObjects\Incident;
+use Snoofa\StpManager\ValueObjects\IncidentState;
 use Superbalist\Monolog\Formatter\GoogleCloudJsonFormatter;
 
 
@@ -29,71 +31,32 @@ function main(CloudEventInterface $event): void
 {
 	global $log;
 
-	$data = Json::decode(base64_decode($event->getData()['message']['data']));
-
-	$log->addDebug('Received message: ', ['data' => $data]);
-	$log->addDebug("Incident ID: {$data->incident->incident_id}");
-	$log->addDebug("Incident State: {$data->incident->state}");
-
-	$incident = $data->incident;
-	$labels = $incident->policy_user_labels;
+	try {
+		$incident = Incident::fromGCPEvent($event);
+	} catch (JsonException $e) {
+		$log->addError('Unable to parse Cloud Event message.', ['exception' => $e]);
+		exit(1);
+	}
 
 	$log->addDebug('Received status change signal', [
-		'incident_id' => $incident->incident_id,
-		'incident_state' => $incident->state,
-		'policy_labels' => $labels
+		'incident_id' => $incident->id,
+		'incident_status' => $incident->state
 	]);
 
-	if ($data->incident->state === 'open') {
-		start_incident(
-			$incident->incident_id,
-			$incident->policy_name,
-			$labels->statuspage_incident_impact ?? null,
-			(bool) ($labels->statuspage_send_notification ?? true),
-			parseAffectedComponents($labels->statuspage_affected_components ?? ''),
-			$labels->statuspage_components_status ?? 'major_outage',
-		);
+	if ($incident->state === IncidentState::OPEN) {
+		start_incident($incident);
 	} else {
-		resolve_incidents($incident->incident_id);
+		resolve_incidents($incident);
 	}
+
+	exit(0);
 }
 
-function parseAffectedComponents(string $components): array {
-	return explode('__', $components);
-}
-
-function start_incident(
-	string $incidentId,
-	string $policyName,
-	?string $incidentImpact = null,
-	bool $deliverNotifications = true,
-	array $components = [],
-	?string $componentsStatus = null
-): void {
+function start_incident(Incident $incident): void {
 	global $client;
 	global $log;
 
-	$incident = [
-		'name' => 'Service outage',
-		'status' => 'investigating',
-		'metadata' => [
-			'data' => [
-				'created_by' => 'statuspage-manager',
-				'gcp_incident_id' => $incidentId,
-				'gcp_policy_name' => $policyName,
-			],
-		],
-		'deliver_notifications' => $deliverNotifications,
-		'body' => 'Alerting policy breached',
-		'components' => array_fill_keys($components, $componentsStatus),
-		'component_ids' => $components
-	];
-
-	if ($incidentImpact !== null) {
-		$incident['impact_override'] = $incidentImpact;
-	}
-
-	$body = ['incident' => $incident];
+	$body = ['incident' => $incident->serialiseForStatuspage()];
 
 	try {
 		$client->post('incidents', ['json' => $body]);
@@ -102,24 +65,26 @@ function start_incident(
 	}
 }
 
-function resolve_incidents(string $incidentId): void {
+function resolve_incidents(Incident $gcpIncident): void {
 	global $client;
 	global $log;
 
 	$response = $client->get('incidents/unresolved');
-	$incidents = Json::decode((string) $response->getBody(), Json::FORCE_ARRAY);
+	$unresolved = Json::decode((string) $response->getBody(), Json::FORCE_ARRAY);
 
-	$incidents = array_filter(
-		$incidents,
-		fn(array $incident): bool => $incident['metadata']['data']['gcp_incident_id'] === $incidentId
+	// Filter out only incidents that match the GCP incident id. (In most cases this should be just one)
+	$unresolved = array_filter(
+		$unresolved,
+		fn(array $incident): bool => $incident['metadata']['data']['gcp_incident_id'] === $gcpIncident->id
 	);
 
-	foreach ($incidents as $incident) {
+	// Mark all incidents as resolved
+	foreach ($unresolved as $incident) {
 		$components = array_map(fn (array $component) => $component['id'], $incident['components']);
 		$body = [
 			'incident' => [
 				'status' => 'resolved',
-				'body' => 'Service back up',
+				'body' => $gcpIncident->endInfo,
 				'components' => array_fill_keys($components, 'operational'),
 			],
 		];
@@ -131,7 +96,7 @@ function resolve_incidents(string $incidentId): void {
 		}
 	}
 
-	$log->debug(count($incidents) . ' incident(s) resolved.');
+	$log->addDebug(count($unresolved) . ' incident(s) marked as resolved');
 }
 
 function registerClient(string $pageId, string $authToken): Client {

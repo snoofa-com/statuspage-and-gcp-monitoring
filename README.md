@@ -7,7 +7,15 @@ https://console.cloud.google.com/cloudpubsub/subscription/detail/statuspage-mana
 ## TODO
 - statuspage SDK
 - publish this so that other poeple can use this
-- 
+
+- Quick start
+  - this is how you can deploy this to GCP
+  - this is how you can customise it (labels, description)
+  - show end-to end setup (video?)
+
+- Promote the repo
+  - twitter, GCP and status page
+  - Stackoverflow questions
 
 
 ## Getting started
