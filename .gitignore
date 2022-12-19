@@ -2,3 +2,4 @@
 src/vendor
 
 local.env
+.phpunit.result.cache

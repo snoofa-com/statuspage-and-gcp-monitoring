@@ -27,14 +27,14 @@ FunctionsFramework::cloudEvent('main', 'main');
 $client = registerClient(getenv('PAGE_ID'), getenv('AUTH_TOKEN'));
 $log = registerLogger();
 
-function main(CloudEventInterface $event): void
+function main(CloudEventInterface $event): never
 {
 	global $log;
 
 	try {
 		$incident = Incident::fromGCPEvent($event);
 	} catch (JsonException $e) {
-		$log->addError('Unable to parse Cloud Event message.', ['exception' => $e]);
+		$log->addError('Unable to parse Cloud Event message', ['exception' => $e]);
 		exit(1);
 	}
 
@@ -46,12 +46,24 @@ function main(CloudEventInterface $event): void
 	if ($incident->state === IncidentState::OPEN) {
 		start_incident($incident);
 	} else {
-		resolve_incidents($incident);
+		try {
+			resolve_incidents($incident);
+		} catch (GuzzleException|JsonException $e) {
+			$log->addError('Failed to resolve incident(s)', ['message' => $e->getMessage(), 'exception' => $e]);
+			exit(1);
+		}
 	}
 
 	exit(0);
 }
 
+/**
+ * An alerting policy fired in GCP, this function starts a new incident in Statuspage. Based on the
+ * configuration this might change the status of some components and send notification to the Statuspage
+ * subscribers.
+ *
+ * @see Incident::$affectedComponents, Incident::$sendNotifications
+ */
 function start_incident(Incident $incident): void {
 	global $client;
 	global $log;
@@ -65,6 +77,16 @@ function start_incident(Incident $incident): void {
 	}
 }
 
+/**
+ * An alerting policy in GCP indicates that the incident has stopped, this function now resolves all incidents
+ * that have been created in Statuspage. It relies on the GCP indent id stored in the metadata of Statuspage
+ * incidents. All affected components are returned to the `operational` state.
+ *
+ * @see Incident::$id
+ *
+ * @throws GuzzleException
+ * @throws JsonException
+ */
 function resolve_incidents(Incident $gcpIncident): void {
 	global $client;
 	global $log;
