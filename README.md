@@ -1,108 +1,86 @@
-# Statuspage Manager
+# Statuspage Manager for GCP Monitoring
 
+![Graphics showing configuration options](./docs/explanatory_graphics.png)
 
-## Notes
-https://console.cloud.google.com/cloudpubsub/subscription/detail/statuspage-manager-alert-sub?project=snoofa-prod&tab=messages
+One picture is often worth thousand words. This repo gives you an easy-to-deploy cloud function which can be triggered when Google Cloud Monitoring Policy fires and it can automatically update your Atlassian Statuspage.
 
-## TODO
-- statuspage SDK
-- publish this so that other poeple can use this
+The cloud function makes it possible to automatically open Statuspage incidents when Policy fires and automatically resolve the incident when things go back to normal in GCP. This works really well with [Uptime checks](https://cloud.google.com/monitoring/uptime-checks/introduction), but can be used with any other [policy](https://cloud.google.com/monitoring/alerts/using-alerting-ui).
 
-- Quick start
-  - this is how you can deploy this to GCP
-  - this is how you can customise it (labels, description)
-  - show end-to end setup (video?)
+Using the Policy's user labels and Documentation you can configure all the important properties of the incident that's to be created in Statuspage. You can configure:
 
-- Promote the repo
-  - twitter, GCP and status page
-  - Stackoverflow questions
+- **Name of the incident**
+  - `<public-name></public-name>` tag in policy documentation
+- **Text of the update when the Statuspage incident starts**
+  - `<public-start-info></public-start-info>` tag in policy documentation
+- **Text of the update when the Statuspage incidents ends**
+  - `<public-end-info></public-end-info>` tag in policy documentation
+- **Impact of the incident**
+  - `none`, `maintenance`, `minor`, `major`, `critical`
+  - value to override calculated impact value
+  - [ℹ️ see Statuspage docs](https://developer.statuspage.io/#operation/postPagesPageIdIncidents)
+- **Affected components**
+  - List one or multiple Statuspage Component IDs
+  - Use `__` (two underscores) to separate multiple components
+  - You can find Statuspage Component ID at the bottom of its edit form
+- **Status of the components**
+  - `operational`, `under_maintenance`, `degraded_performance`, `partial_outage`, `major_outage`
+  - Default: `major_outage`
+  - [ℹ️ see Statuspage docs](https://developer.statuspage.io/#operation/postPagesPageIdComponents) 
+- **Whether to send notifications**
+  - `true`, `false`
+  - Default: `true`
 
+## Quick Start
+This assumes that you have your Statuspage setup and your monitoring policies in place. Then, these are the few quick things that you need to do to set this up. Setup GCP PubSub topic, Deploy the Cloud Function, Create Notification Channel, and configure monitoring policy. Sounds like a lot, but it can be done in just a few minutes. If you have `gcloud` [set up](https://cloud.google.com/sdk/gcloud#download_and_install_the) you can do this form your terminal, otherwise you can use the [Google Cloud Console Web UI](https://cloud.google.com/cloud-console).
 
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
-
+### Setup PubSub Topic
+```bash
+gcloud pubsub topics create YOUR_TOPIC_NAME
 ```
-cd existing_repo
-git remote add origin https://git.snoofa.com/snoofa/statuspage-manager.git
-git branch -M main
-git push -uf origin main
+
+Good topic name can be for example `statuspage-manager-alerting`
+
+### Deploy the Cloud Function
+Clone this repo. Get you Statuspage ID and generate an Auth token by signing in to your Statuspage account, clicking on your profile picture in the top right and clicking **API Info**. On this page you'll find you Page ID and you can generate a new API Key. 
+
+Then run the following commands from the root of the cloned directory:
+
+```bash
+STATUSPAGE_PAGE_ID='YOUR_PAGE_ID'
+STATUSPAGE_PAGE_ID='YOUR_AUTH_TOKEN'
+
+gcloud beta functions deploy YOUR_FUNCTION_NAME \
+      --gen2 \
+      --region=YOUR_REGION \
+      --source=./src/ \
+      --runtime='php81' \
+      --ingress-settings="internal-only" \
+      --memory='512MB' \
+      --timeout='60s' \
+      --max-instances='5' \
+      --entry-point='main' \
+      --trigger-topic=YOUR_TOPIC_NAME \
+      --set-env-vars=PAGE_ID=$STATUSPAGE_PAGE_ID,AUTH_TOKEN=$STATUSPAGE_AUTH_TOKEN
 ```
+- YOUR_FUNCTION_NAME e.g. `statuspage-manager`
+- YOUR_REGION e.g. `eu-west2`
+- YOUR_TOPIC_NAME e.g. `statuspage-manager-alerting`
 
-## Integrate with your tools
+If you bump into issues, [here](https://cloud.google.com/functions/docs/calling/pubsub) is a guide from Google that might help.
 
-- [ ] [Set up project integrations](https://git.snoofa.com/snoofa/statuspage-manager/-/settings/integrations)
+### Create Notification Channel
 
-## Collaborate with your team
+Go to GCP Console, Select Monitoring > Alerting and click [Edit Notification Channels](https://console.cloud.google.com/monitoring/alerting/notifications). At the very bottom add a new Pub/Sub. Fill in Channel display name e.g. `Status Page Manager Alert` and then the full topic name in the format `project/YOUR_PROJECT_ID/topics/YOUR_TOPIC_NAME`. You can send a test notification to check that you pick an existing topic.
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Automatically merge when pipeline succeeds](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+[Here](https://cloud.google.com/blog/products/management-tools/how-to-use-pubsub-as-a-cloud-monitoring-notification-channel) is an article from Google Cloud on the topic of suing Pub/Sub as a notification channel in Cloud Monitoring.
 
-## Test and Deploy
+### Configure Monitoring Policy
+Say you want to create an incident whenever a uptime check policy triggers. Find the policy in Monitoring > [Alerting](https://console.cloud.google.com/monitoring/alerting), click `Edit`, select the Alert details > `Notifications and name`. In the notification channels dropdown find the channel you've created in the previous step and then (optionally) configure other parameters of the Statuspage using the Policy user labels and policy Documentation as shown at the start of this document.
 
-Use the built-in continuous integration in GitLab.
+### 🚀 That's it
+Your Google Cloud Monitoring Alerts are now connected to you Atlassian Status page. Now let's just hope they will never be needed. 😉
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing(SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+### Contributing
 
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thank you to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+This repo is published under XYZ license, so feel free to fork and improve.
+You can also file an issue or get in touch with us at [support@snoofa.com](mailto:support@snoofa.com).

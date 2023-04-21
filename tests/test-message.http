@@ -1,0 +1,77 @@
+POST http://0.0.0.0:8100/
+Content-Type: application/json
+ce-id: 1234567890
+ce-source: //pubsub.googleapis.com/projects/MY-PROJECT/topics/MY-TOPIC
+ce-specversion: 1.0
+ce-type: com.google.cloud.pubsub.topic.publish
+
+{
+	"message": {
+		"data": {
+			"incident": {
+				"condition": {
+					"conditionThreshold": {
+						"aggregations": [
+							{
+								"alignmentPeriod": "1200s",
+								"crossSeriesReducer": "REDUCE_COUNT_FALSE",
+								"groupByFields": [
+									"resource.label.*"
+								],
+								"perSeriesAligner": "ALIGN_NEXT_OLDER"
+							}
+						],
+						"comparison": "COMPARISON_GT",
+						"duration": "60s",
+						"filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND metric.label.check_id=\"tmp-statuspage-test-sub-service-com\" AND resource.type=\"uptime_url\"",
+						"thresholdValue": 1,
+						"trigger": {
+							"count": 1
+						}
+					},
+					"displayName": "Failure of uptime check_id tmp-statuspage-test-sub-service-com-QtZT3aziBmo",
+					"name": "projects/service-sub/alertPolicies/13721219462147093166/conditions/13721219462147093953"
+				},
+				"condition_name": "Failure of uptime check_id tmp-statuspage-test-sub-service-com-QtZT3aziBmo",
+				"ended_at": 1671074632,
+				"incident_id": "0.mqbylsu02i30",
+				"metadata": {
+					"system_labels": {},
+					"user_labels": {}
+				},
+				"metric": {
+					"displayName": "Check passed",
+					"labels": {},
+					"type": "monitoring.googleapis.com/uptime_check/check_passed"
+				},
+				"observed_value": "0.000",
+				"policy_name": "tmp_test_sub.service.com",
+				"policy_user_labels": {
+					"statuspage_affected_components": "component_one_id__component_two_id",
+					"statuspage_components_status": "major_outage",
+					"statuspage_incident_impact": "critical",
+					"statuspage_send_notification": "true"
+				},
+				"resource": {
+					"labels": {
+						"host": "sub.service.com",
+						"project_id": "service-sub"
+					},
+					"type": "uptime_url"
+				},
+				"resource_id": "",
+				"resource_name": "service-sub Uptime Check URL labels {project_id=service-sub, host=sub.service.com}",
+				"resource_type_display_name": "Uptime Check URL",
+				"scoping_project_id": "service-sub",
+				"scoping_project_number": 178334366218,
+				"started_at": 1671054972,
+				"state": "closed",
+				"summary": "The uptime check for service-sub Uptime Check URL labels {project_id=service-sub, host=sub.service.com} has returned to a normal state.",
+				"threshold_value": "1",
+				"url": "https://console.cloud.google.com/monitoring/alerting/incidents/0.some-incident?project=service-sub"
+			},
+			"version": "1.2"
+        }
+	}
+}
+

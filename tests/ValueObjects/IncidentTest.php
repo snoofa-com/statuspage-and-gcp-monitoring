@@ -1,5 +1,12 @@
 <?php
 
+/**
+ * This file is part of the Snoofa project (https://snoofa.com)
+ * Copyright (c) 2023 Snoofa Limited
+ */
+
+declare(strict_types=1);
+
 namespace ValueObjects;
 
 use CloudEvents\V1\CloudEvent;
